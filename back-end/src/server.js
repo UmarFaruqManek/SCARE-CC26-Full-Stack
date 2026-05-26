@@ -14,10 +14,17 @@ const memoryPredictions = [];
 
 let sequelize = null;
 let Prediction = null;
+let databaseReadyPromise = null;
+let databaseInitError = null;
 
 if (!useMemoryStore) {
-  sequelize = require("./config/database");
-  Prediction = require("./models/Prediction");
+  try {
+    sequelize = require("./config/database");
+    Prediction = require("./models/Prediction");
+  } catch (error) {
+    databaseInitError = error;
+    console.error("Gagal inisialisasi database:", error.message);
+  }
 }
 
 // Middleware wajib
@@ -25,17 +32,40 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Sinkronisasi Database. Di Vercel, default-nya pakai memory store agar native SQLite tidak crash.
 if (useMemoryStore) {
   console.log("Mode Vercel: menggunakan in-memory prediction store.");
-} else {
-  sequelize.sync({ force: false })
-    .then(() => console.log("Database SQLite berhasil disinkronisasi."))
-    .catch((err) => console.error("Gagal sinkronisasi database:", err));
+}
+
+async function ensureDatabaseReady() {
+  if (useMemoryStore) {
+    return;
+  }
+
+  if (databaseInitError) {
+    throw databaseInitError;
+  }
+
+  if (!sequelize || !Prediction) {
+    throw new Error("Database belum terinisialisasi.");
+  }
+
+  if (!databaseReadyPromise) {
+    databaseReadyPromise = sequelize
+      .authenticate()
+      .then(() => sequelize.sync({ force: false }))
+      .then(() => console.log("Database berhasil disinkronisasi."))
+      .catch((error) => {
+        databaseReadyPromise = null;
+        throw error;
+      });
+  }
+
+  return databaseReadyPromise;
 }
 
 async function createPredictionRecord({ label, accuracy }) {
   if (!useMemoryStore) {
+    await ensureDatabaseReady();
     return Prediction.create({ label, accuracy });
   }
 
@@ -54,6 +84,7 @@ async function createPredictionRecord({ label, accuracy }) {
 
 async function findPredictionRecords() {
   if (!useMemoryStore) {
+    await ensureDatabaseReady();
     return Prediction.findAll({
       order: [["createdAt", "DESC"]],
     });
@@ -64,6 +95,7 @@ async function findPredictionRecords() {
 
 async function deletePredictionRecord(id) {
   if (!useMemoryStore) {
+    await ensureDatabaseReady();
     return Prediction.destroy({
       where: { id },
     });
@@ -178,6 +210,30 @@ app.get("/", (req, res) => {
     name: "SCARE Advanced Scar Classification Engine API",
     status: "running",
   });
+});
+
+app.get("/api/health/db", async (req, res) => {
+  try {
+    await ensureDatabaseReady();
+
+    return res.status(200).json({
+      status: "success",
+      store: useMemoryStore ? "memory" : process.env.DATABASE_URL ? "postgres" : "sqlite",
+      databaseConfigured: Boolean(process.env.DATABASE_URL),
+      connected: !useMemoryStore,
+      message: useMemoryStore
+        ? "Menggunakan in-memory store karena DATABASE_URL belum tersedia."
+        : "Database connected.",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      store: process.env.DATABASE_URL ? "postgres" : "sqlite",
+      databaseConfigured: Boolean(process.env.DATABASE_URL),
+      connected: false,
+      message: error.message,
+    });
+  }
 });
 
 // ==========================================
