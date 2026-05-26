@@ -140,8 +140,9 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Menjalankan server Express
-if (process.env.NODE_ENV !== "test") {
+// Menjalankan server Express hanya saat lokal.
+// Di Vercel, app diekspor sebagai serverless handler dan tidak boleh listen manual.
+if (!process.env.VERCEL && process.env.NODE_ENV !== "test") {
   app.listen(PORT, () => {
     console.log(`Server Express SCARE berjalan di http://localhost:${PORT}`);
   });
