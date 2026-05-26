@@ -3,7 +3,13 @@
   "builds": [
     {
       "src": "app.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "main.py",
+          "scar_model.tflite"
+        ]
+      }
     }
   ],
   "routes": [
@@ -11,11 +17,5 @@
       "src": "/(.*)",
       "dest": "app.py"
     }
-  ],
-  "functions": {
-    "app.py": {
-      "maxDuration": 60,
-      "includeFiles": "scar_model.tflite"
-    }
-  }
+  ]
 }
