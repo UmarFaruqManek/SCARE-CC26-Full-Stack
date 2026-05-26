@@ -1,24 +1,82 @@
 require("dotenv").config(); // Muat variabel dari file .env sebelum apapun
 
+const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
-const sequelize = require("./config/database");
-const Prediction = require("./models/Prediction");
 const { classifyScar } = require("./services/predictService");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const useMemoryStore =
+  process.env.VERCEL && process.env.USE_SQLITE !== "true";
+const memoryPredictions = [];
+
+let sequelize = null;
+let Prediction = null;
+
+if (!useMemoryStore) {
+  sequelize = require("./config/database");
+  Prediction = require("./models/Prediction");
+}
 
 // Middleware wajib
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Sinkronisasi Database
-sequelize.sync({ force: false })
-  .then(() => console.log("Database SQLite berhasil disinkronisasi."))
-  .catch((err) => console.error("Gagal sinkronisasi database:", err));
+// Sinkronisasi Database. Di Vercel, default-nya pakai memory store agar native SQLite tidak crash.
+if (useMemoryStore) {
+  console.log("Mode Vercel: menggunakan in-memory prediction store.");
+} else {
+  sequelize.sync({ force: false })
+    .then(() => console.log("Database SQLite berhasil disinkronisasi."))
+    .catch((err) => console.error("Gagal sinkronisasi database:", err));
+}
+
+async function createPredictionRecord({ label, accuracy }) {
+  if (!useMemoryStore) {
+    return Prediction.create({ label, accuracy });
+  }
+
+  const now = new Date();
+  const prediction = {
+    id: crypto.randomUUID(),
+    label,
+    accuracy,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  memoryPredictions.unshift(prediction);
+  return prediction;
+}
+
+async function findPredictionRecords() {
+  if (!useMemoryStore) {
+    return Prediction.findAll({
+      order: [["createdAt", "DESC"]],
+    });
+  }
+
+  return memoryPredictions;
+}
+
+async function deletePredictionRecord(id) {
+  if (!useMemoryStore) {
+    return Prediction.destroy({
+      where: { id },
+    });
+  }
+
+  const index = memoryPredictions.findIndex((prediction) => prediction.id === id);
+  if (index === -1) {
+    return 0;
+  }
+
+  memoryPredictions.splice(index, 1);
+  return 1;
+}
 
 // Konfigurasi Multer untuk upload file gambar (In-Memory Buffer)
 const storage = multer.memoryStorage();
@@ -55,7 +113,7 @@ app.post("/api/predict", upload.single("image"), async (req, res, next) => {
     const result = await classifyScar(req.file.buffer);
 
     // Simpan metadata hasil analisis ke database (TIDAK menyimpan file gambar)
-    const prediction = await Prediction.create({
+    const prediction = await createPredictionRecord({
       label: result.label,
       accuracy: result.accuracy,
     });
@@ -79,9 +137,7 @@ app.post("/api/predict", upload.single("image"), async (req, res, next) => {
 // 2. GET /api/predictions - Mengambil seluruh riwayat analisis
 app.get("/api/predictions", async (req, res, next) => {
   try {
-    const predictions = await Prediction.findAll({
-      order: [["createdAt", "DESC"]],
-    });
+    const predictions = await findPredictionRecords();
 
     return res.status(200).json({
       status: "success",
@@ -98,9 +154,7 @@ app.delete("/api/predictions/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const deleted = await Prediction.destroy({
-      where: { id },
-    });
+    const deleted = await deletePredictionRecord(id);
 
     if (!deleted) {
       return res.status(404).json({
