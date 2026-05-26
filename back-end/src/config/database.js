@@ -1,17 +1,32 @@
 const { Sequelize } = require("sequelize");
 const path = require("path");
 
-const storagePath =
-  process.env.SQLITE_STORAGE ||
-  (process.env.VERCEL
-    ? path.join("/tmp", "database.sqlite")
-    : path.join(__dirname, "..", "..", "database.sqlite"));
+let sequelize;
 
-// Membuat koneksi database SQLite lokal
-const sequelize = new Sequelize({
-  dialect: "sqlite",
-  storage: storagePath,
-  logging: false, // Nonaktifkan logging SQL ke konsol agar output bersih
-});
+if (process.env.DATABASE_URL) {
+  sequelize = new Sequelize(process.env.DATABASE_URL, {
+    dialect: "postgres",
+    logging: false,
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false,
+      },
+    },
+  });
+} else {
+  const storagePath =
+    process.env.SQLITE_STORAGE ||
+    (process.env.VERCEL
+      ? path.join("/tmp", "database.sqlite")
+      : path.join(__dirname, "..", "..", "database.sqlite"));
+
+  // Membuat koneksi database SQLite lokal
+  sequelize = new Sequelize({
+    dialect: "sqlite",
+    storage: storagePath,
+    logging: false, // Nonaktifkan logging SQL ke konsol agar output bersih
+  });
+}
 
 module.exports = sequelize;

@@ -9,7 +9,7 @@ const { classifyScar } = require("./services/predictService");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const useMemoryStore =
-  process.env.VERCEL && process.env.USE_SQLITE !== "true";
+  process.env.VERCEL && !process.env.DATABASE_URL && process.env.USE_SQLITE !== "true";
 const memoryPredictions = [];
 
 let sequelize = null;
