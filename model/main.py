@@ -74,6 +74,7 @@ def read_root():
         "instructions": "Send a POST request with an image file to /predict/."
     }
 
+@app.post("/predict")
 @app.post("/predict/")
 async def predict(file: UploadFile = File(...)):
     if interpreter is None:
