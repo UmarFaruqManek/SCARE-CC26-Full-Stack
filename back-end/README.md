@@ -1,80 +1,125 @@
 # SCARE Backend API
 
-> **S**car **C**lassification **A**dvanced **R**easoning **E**ngine — RESTful API Server
+Backend REST API untuk aplikasi SCARE. Service ini menerima gambar luka dari frontend, meneruskan gambar ke model AI jika `MODEL_API_URL` tersedia, menyimpan metadata hasil prediksi ke SQLite, dan menyediakan endpoint untuk membaca atau menghapus riwayat prediksi.
 
-Backend Express.js yang melayani klasifikasi gambar luka menggunakan AI, dengan penyimpanan riwayat sesi anonim ke database SQLite.
+## Ringkasan
 
----
-
-## Tech Stack
-
-| Teknologi | Kegunaan |
+| Item | Keterangan |
 |---|---|
-| **Express.js** | Framework server HTTP |
-| **Multer** | Penerimaan file gambar (in-memory, tidak disimpan ke disk) |
-| **Sequelize** | ORM untuk berinteraksi dengan database |
-| **SQLite3** | Database ringan untuk riwayat sesi |
-| **dotenv** | Manajemen environment variables |
-| **nodemon** | Auto-restart server saat development |
-
----
-
-## Instalasi & Menjalankan Server
-
-```bash
-# 1. Masuk ke direktori backend
-cd back-end
-
-# 2. Install semua dependensi
-npm install
-
-# 3. Salin template environment variables
-cp .env.example .env
-
-# 4. Jalankan server (Development — auto-restart)
-npm run dev
-
-# 5. Jalankan server (Production)
-npm start
-```
-
-Server akan berjalan di: `http://localhost:3000`
-
----
+| Runtime | Node.js |
+| Framework | Express.js |
+| Upload file | Multer, in-memory buffer |
+| Database | SQLite via Sequelize |
+| Default port | `3000` |
+| Base URL lokal | `http://localhost:3000` |
 
 ## Struktur Folder
 
-```
+```txt
 back-end/
-├── src/
-│   ├── config/
-│   │   └── database.js       # Koneksi SQLite via Sequelize
-│   ├── models/
-│   │   └── Prediction.js     # Skema tabel riwayat klasifikasi
-│   ├── services/
-│   │   └── predictService.js # Engine klasifikasi AI (ganti ini saat model asli siap)
-│   └── server.js             # Entry point — semua endpoint API
-├── .env                      # Environment variables (jangan di-commit!)
-├── .env.example              # Template .env untuk rekan tim
-├── .gitignore
-├── package.json
-└── vercel.json               # Konfigurasi deployment Vercel
+  src/
+    config/
+      database.js
+    models/
+      Prediction.js
+    services/
+      predictService.js
+    server.js
+  .env.example
+  package.json
+  vercel.json
 ```
 
----
+## Menjalankan Lokal
 
-## Dokumentasi API Endpoint
+```bash
+cd back-end
+npm install
+copy .env.example .env
+npm run dev
+```
 
-### Base URL
-- **Lokal:** `http://localhost:3000`
-- **Production:** `https://<nama-project>.vercel.app`
+Server akan berjalan di:
 
----
+```txt
+http://localhost:3000
+```
 
-### `GET /`
-Cek status server berjalan.
+Untuk production lokal:
 
-**Response:**
+```bash
+npm start
+```
+
+## Environment Variables
+
+Buat file `.env` dari `.env.example`.
+
+```env
+PORT=3000
+NODE_ENV=development
+MODEL_API_URL=
+```
+
+| Variable | Wajib | Keterangan |
+|---|---:|---|
+| `PORT` | Tidak | Port server Express. Default `3000`. |
+| `NODE_ENV` | Tidak | Mode runtime, contoh `development` atau `production`. |
+| `MODEL_API_URL` | Tidak | URL endpoint model AI. Jika kosong, backend memakai mock classifier. |
+
+Contoh saat model sudah dideploy:
+
+```env
+MODEL_API_URL=https://nama-model.vercel.app/predict/
+```
+
+## Alur Kerja API
+
+1. Frontend mengirim gambar ke `POST /api/predict` dengan field form-data bernama `image`.
+2. Backend membaca gambar di memory, tidak menyimpan file gambar ke disk.
+3. Jika `MODEL_API_URL` kosong, backend memakai mock classifier deterministik.
+4. Jika `MODEL_API_URL` diisi, backend mengirim gambar ke endpoint model dengan field form-data bernama `file`.
+5. Backend menyimpan metadata hasil ke SQLite: `label` dan `accuracy`.
+6. Backend mengirim response ke frontend.
+
+## Format Response Umum
+
+Response sukses memakai format:
+
+```json
+{
+  "status": "success",
+  "message": "...",
+  "data": {}
+}
+```
+
+Response error memakai format:
+
+```json
+{
+  "status": "error",
+  "message": "Pesan error"
+}
+```
+
+Beberapa validasi memakai:
+
+```json
+{
+  "status": "fail",
+  "message": "Pesan validasi"
+}
+```
+
+## Endpoint
+
+### GET `/`
+
+Mengecek apakah backend berjalan.
+
+**Response 200**
+
 ```json
 {
   "name": "SCARE Advanced Scar Classification Engine API",
@@ -82,22 +127,36 @@ Cek status server berjalan.
 }
 ```
 
----
+**Contoh curl**
 
-### `POST /api/predict`
-Menerima file gambar luka, menjalankan klasifikasi AI, menyimpan metadata hasil ke database, dan mengembalikan hasil klasifikasi.
-
-**Request:**
-```
-Method  : POST
-URL     : /api/predict
-Headers : Content-Type: multipart/form-data
-Body    :
-  - image     (File, wajib)   → File gambar luka (JPG/JPEG/PNG, maks 10MB)
-  - sessionId (String, wajib) → ID sesi browser yang unik dan anonim
+```bash
+curl http://localhost:3000/
 ```
 
-**Response Sukses `201`:**
+### POST `/api/predict`
+
+Mengunggah gambar luka, menjalankan klasifikasi, menyimpan hasil prediksi, dan mengembalikan metadata hasil.
+
+**Content-Type**
+
+```txt
+multipart/form-data
+```
+
+**Body**
+
+| Field | Tipe | Wajib | Keterangan |
+|---|---|---:|---|
+| `image` | File | Ya | File gambar. MIME type harus diawali `image/`. |
+
+**Batas ukuran file**
+
+```txt
+10 MB
+```
+
+**Response 201**
+
 ```json
 {
   "status": "success",
@@ -106,12 +165,13 @@ Body    :
     "id": "96b0e545-29ee-4f53-94ab-6350f3da3515",
     "label": "Keloid",
     "accuracy": "94.7%",
-    "createdAt": "2026-05-21T12:25:46.000Z"
+    "createdAt": "2026-05-31T10:25:46.000Z"
   }
 }
 ```
 
-**Response Error `400` (tidak ada gambar):**
+**Response 400 jika gambar tidak dikirim**
+
 ```json
 {
   "status": "fail",
@@ -119,127 +179,157 @@ Body    :
 }
 ```
 
-**Response Error `400` (tidak ada sessionId):**
+**Response 400 jika file bukan gambar**
+
 ```json
 {
-  "status": "fail",
-  "message": "Parameter sessionId wajib disertakan."
+  "status": "error",
+  "message": "Hanya file gambar (JPG, JPEG, PNG) yang diperbolehkan!"
 }
 ```
 
-> ⚠️ **Catatan Privasi:** File gambar HANYA diproses di RAM server (in-memory buffer). Gambar tidak pernah disimpan ke disk maupun database.
+**Contoh curl**
 
----
-
-### `GET /api/predictions`
-Mengambil riwayat hasil klasifikasi.
-
-**Request:**
-```
-Method : GET
-URL    : /api/predictions
-Query  :
-  - sessionId (String, opsional) → Filter riwayat per sesi. Jika tidak diisi, kembalikan semua riwayat.
+```bash
+curl -X POST http://localhost:3000/api/predict \
+  -F "image=@./sample.jpg"
 ```
 
-**Contoh:**
-```
-GET /api/predictions?sessionId=sess_abc123xyz
+**Contoh JavaScript**
+
+```js
+const formData = new FormData();
+formData.append("image", fileInput.files[0]);
+
+const response = await fetch("http://localhost:3000/api/predict", {
+  method: "POST",
+  body: formData,
+});
+
+const result = await response.json();
+console.log(result);
 ```
 
-**Response Sukses `200`:**
+### GET `/api/predictions`
+
+Mengambil seluruh riwayat prediksi, diurutkan dari data terbaru.
+
+**Response 200**
+
 ```json
 {
   "status": "success",
   "results": 2,
   "data": [
     {
-      "id": "96b0e545-...",
-      "sessionId": "sess_abc123xyz",
+      "id": "96b0e545-29ee-4f53-94ab-6350f3da3515",
       "label": "Keloid",
       "accuracy": "94.7%",
-      "createdAt": "2026-05-21T12:30:00.000Z",
-      "updatedAt": "2026-05-21T12:30:00.000Z"
+      "createdAt": "2026-05-31T10:25:46.000Z",
+      "updatedAt": "2026-05-31T10:25:46.000Z"
     },
     {
-      "id": "a1b2c3d4-...",
-      "sessionId": "sess_abc123xyz",
+      "id": "a1b2c3d4-29ee-4f53-94ab-6350f3da3515",
       "label": "Hypertrophic",
       "accuracy": "91.2%",
-      "createdAt": "2026-05-21T12:25:00.000Z",
-      "updatedAt": "2026-05-21T12:25:00.000Z"
+      "createdAt": "2026-05-31T10:10:00.000Z",
+      "updatedAt": "2026-05-31T10:10:00.000Z"
     }
   ]
 }
 ```
 
----
+**Contoh curl**
 
-### `DELETE /api/predictions`
-Menghapus seluruh riwayat klasifikasi untuk sesi tertentu dari database (fitur privasi).
-
-**Request:**
-```
-Method : DELETE
-URL    : /api/predictions
-Query  :
-  - sessionId (String, wajib)
+```bash
+curl http://localhost:3000/api/predictions
 ```
 
-**Contoh:**
-```
-DELETE /api/predictions?sessionId=sess_abc123xyz
-```
+### DELETE `/api/predictions/:id`
 
-**Response Sukses `200`:**
+Menghapus satu riwayat prediksi berdasarkan `id`.
+
+**Path parameter**
+
+| Parameter | Tipe | Wajib | Keterangan |
+|---|---|---:|---|
+| `id` | UUID | Ya | ID prediksi yang ingin dihapus. |
+
+**Response 200**
+
 ```json
 {
   "status": "success",
-  "message": "Berhasil menghapus 2 riwayat sesi dari database."
+  "message": "Riwayat berhasil dihapus dari database."
 }
 ```
 
----
+**Response 404 jika data tidak ditemukan**
 
-## Schema Database
+```json
+{
+  "status": "fail",
+  "message": "Data tidak ditemukan."
+}
+```
 
-**Tabel: `Predictions`**
+**Contoh curl**
+
+```bash
+curl -X DELETE http://localhost:3000/api/predictions/96b0e545-29ee-4f53-94ab-6350f3da3515
+```
+
+## Skema Database
+
+Tabel: `Predictions`
 
 | Kolom | Tipe | Keterangan |
 |---|---|---|
-| `id` | UUID (PK) | ID unik otomatis (UUID v4) |
-| `sessionId` | STRING | ID sesi browser yang anonim |
-| `label` | STRING | Hasil klasifikasi: `"Keloid"` atau `"Hypertrophic"` |
-| `accuracy` | STRING | Tingkat akurasi AI (contoh: `"94.7%"`) |
-| `createdAt` | DATETIME | Waktu analisis dilakukan (otomatis) |
-| `updatedAt` | DATETIME | Waktu update terakhir (otomatis) |
+| `id` | UUID | Primary key, dibuat otomatis. |
+| `label` | String | Hasil klasifikasi, contoh `Keloid` atau `Hypertrophic`. |
+| `accuracy` | String | Confidence dalam format persen, contoh `94.7%`. |
+| `createdAt` | Date | Waktu data dibuat. |
+| `updatedAt` | Date | Waktu data terakhir diperbarui. |
 
-> ✅ **Tidak ada data gambar, nama file, IP address, atau informasi pribadi yang disimpan.**
+File gambar tidak disimpan ke database. Yang disimpan hanya metadata hasil prediksi.
 
----
+## Integrasi Dengan Model API
 
-## Cara Mengintegrasikan Model AI Asli
+Backend mengharapkan endpoint model menerima:
 
-Ketika model AI sudah siap, **hanya satu file yang perlu diubah**: `src/services/predictService.js`.
-
-Tanyakan kepada rekan yang mengerjakan model:
-1. Model di-deploy di mana? (URL / file lokal)
-2. Bagaimana cara memanggilnya? (HTTP / TensorFlow.js / Python)
-3. Apa format output-nya? (contoh: `{ label, confidence }`)
-4. Apakah gambar perlu dipreproses? (resize, normalisasi)
-
-Kemudian ganti isi fungsi `classifyScar()` di `predictService.js`. File lain tidak perlu diubah.
-
----
-
-## Deployment ke Vercel
-
-```bash
-# Pastikan vercel.json sudah ada di root folder back-end/
-# Kemudian push ke GitHub dan hubungkan ke Vercel dashboard
-
-# Root Directory di Vercel: back-end/
-# Framework Preset       : Other
-# Build Command          : (kosongkan)
-# Output Directory       : (kosongkan)
+```txt
+POST /predict/
+Content-Type: multipart/form-data
+Field: file
 ```
+
+Backend mengharapkan response model memiliki minimal field:
+
+```json
+{
+  "label": "Keloid",
+  "accuracy": "94.7%"
+}
+```
+
+Jika response model tidak memiliki `label` atau `accuracy`, backend akan mengembalikan error.
+
+## Deploy ke Vercel
+
+Jika deploy sebagai project sendiri di Vercel:
+
+```txt
+Root Directory: back-end
+Framework Preset: Other
+Build Command: kosongkan
+Output Directory: kosongkan
+```
+
+Tambahkan environment variable di Vercel:
+
+```env
+MODEL_API_URL=https://nama-model.vercel.app/predict/
+NODE_ENV=production
+```
+
+Catatan: SQLite lokal di serverless environment tidak ideal untuk data production jangka panjang. Untuk production yang stabil, gunakan database eksternal seperti PostgreSQL, MySQL, atau layanan database managed.
